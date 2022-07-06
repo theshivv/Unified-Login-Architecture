@@ -1,32 +1,42 @@
-def projectName = 'reactdemo'
-def version = "0.0.${currentBuild.number}"
-def dockerImageTag = "${projectName}:${version}"
-
+#!/usr/bin/env groovy
 pipeline {
-    agent any
-    environment { 
-        CI = 'true'
+  agent any
+  environment {
+    NODE_ENV_PATH = './venv'
+    NODE_VERSION = '6.11.1'
+  }
+  stages {
+    stage('Pre-cleanup') {
+      steps {
+        sh 'rm -rf ./venv'
+        sh 'rm -rf ./node_modules'
+        sh 'rm -rf ./bower_components'
+      }
     }
-    stages {
-        stage('Build') {
-            steps {
-                sh "docker build -t ${dockerImageTag} ."
-            }
-        }
-        stage('Test') {
-            steps {
-                sh 'echo npm test'
-            }
-        }
-
-        stage('Deploy Container To Openshift') {
-            steps {
-                sh "oc login https://localhost:8443 --username admin --password admin --insecure-skip-tls-verify=true"
-                sh "oc project ${projectName} || oc new-project ${projectName}"
-                sh "oc delete all --selector app=${projectName} || echo 'Unable to delete all previous openshift resources'"
-                sh "oc new-app ${dockerImageTag} -l version=${version}"
-                sh "oc expose svc/${projectName}"
-            }
-        }
+    stage('Make venv') {
+      steps {
+        sh 'nodeenv --prebuilt -n $NODE_VERSION $NODE_ENV_PATH'
+      }
     }
+    stage('Install dependencies') {
+      steps {
+        sh '. ./venv/bin/activate && npm install'
+        sh '. ./venv/bin/activate && npm install -g bower'
+        sh '. ./venv/bin/activate && bower install'
+      }
+    }
+    stage('Run tests') {
+      steps {
+        sh '. ./node_env/bin/activate && npm test'
+      }
+    }
+  }
+  post {
+    failure {
+      echo 'Processing failed'
+    }
+    success {
+      echo 'Processing succeeded'
+    }
+  }
 }
